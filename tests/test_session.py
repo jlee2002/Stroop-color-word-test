@@ -1,9 +1,51 @@
 import unittest
 
-from stroop import COLORS, Session, make_trials, timer_text
+from stroop import COLORS, Session, make_trials, timer_text, parse_response_limit
 
 
 class SessionTests(unittest.TestCase):
+    def test_timeout_counts_once_and_resets_after_resume(self):
+        session = Session(make_trials(2, 1))
+        session.set_response_limit("2.5")
+        session.advance()
+        self.assertIsNone(session.check_timeout(100))
+        session.onset = 100
+        self.assertIsNone(session.check_timeout(102.49))
+        row = session.respond(session.trial.answer, 102.5)
+        self.assertTrue(row["timed_out"])
+        self.assertFalse(row["correct"])
+        self.assertEqual(row["response"], "TIMEOUT")
+        self.assertEqual(session.phase, "error")
+        self.assertIsNone(session.check_timeout(110))
+        self.assertIsNone(session.respond("RED", 110))
+        self.assertEqual(len(session.rows), 1)
+        self.assertFalse(session.set_response_limit(1))
+        session.advance()
+        session.onset = 111
+        row = session.respond(session.trial.answer, 112)
+        self.assertTrue(row["correct"])
+        self.assertFalse(row["timed_out"])
+
+    def test_session_end_takes_precedence_over_trial_timeout(self):
+        session = Session(make_trials(2, 1), duration_seconds=2)
+        session.set_response_limit(2)
+        session.advance(now=100)
+        session.onset = 100
+        self.assertIsNone(session.check_timeout(102))
+        self.assertEqual(session.phase, "done")
+        self.assertEqual(session.rows, [])
+
+    def test_response_limit_validation_and_off(self):
+        self.assertIsNone(parse_response_limit(""))
+        self.assertEqual(parse_response_limit("2.5"), 2.5)
+        for value in ("0", "-2", "nan", "inf", "abc", "."):
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                parse_response_limit(value)
+        session = Session(make_trials(1, 1))
+        session.advance()
+        session.onset = 0
+        self.assertIsNone(session.check_timeout(1000))
+
     def test_timer_starts_on_start_and_expires_during_error_pause(self):
         session = Session(make_trials(2, 1), duration_seconds=120)
         self.assertEqual(session.remaining(500), 120)

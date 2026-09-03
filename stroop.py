@@ -61,6 +61,13 @@ class Session:
         self.deadline = None
         self.batch_size = len(trials)
         self.refill_rng = random.Random(seed)
+        self.response_limit_seconds = None
+
+    def set_response_limit(self, value):
+        if self.phase != "ready":
+            return False
+        self.response_limit_seconds = parse_response_limit(value)
+        return True
 
     def remaining(self, now=None):
         if self.deadline is None:
@@ -95,14 +102,28 @@ class Session:
         self.onset = None
 
     def respond(self, color, now):
-        self.expire(now)
+        timeout = self.check_timeout(now)
+        if timeout:
+            return timeout
         if self.phase != "active" or self.onset is None or color not in COLORS:
             return None
+        return self._record(color, now)
+
+    def check_timeout(self, now):
+        self.expire(now)
+        if (self.phase == "active" and self.onset is not None
+                and self.response_limit_seconds is not None
+                and now - self.onset >= self.response_limit_seconds):
+            return self._record("TIMEOUT", now, timed_out=True)
+        return None
+
+    def _record(self, color, now, timed_out=False):
         trial = self.trial
-        correct = color == trial.answer
+        correct = not timed_out and color == trial.answer
         self.last = {"trial": self.index + 1, **asdict(trial),
                      "expected": trial.answer, "response": color,
                      "correct": correct, "response_ms": round((now - self.onset) * 1000, 2),
+                     "timed_out": timed_out, "response_limit_seconds": self.response_limit_seconds,
                      "answered_utc": datetime.now(timezone.utc).isoformat()}
         self.rows.append(self.last)
         self.phase = "correct" if correct else "error"
@@ -113,7 +134,17 @@ class Session:
                 "total": len(self.trials), "answered": len(self.rows),
                 "correct": sum(r["correct"] for r in self.rows),
                 "deadline": self.deadline, "duration_seconds": self.duration_seconds,
+                "response_limit_seconds": self.response_limit_seconds,
                 "last": self.last}
+
+
+def parse_response_limit(value):
+    if value is None or str(value).strip() == "":
+        return None
+    seconds = float(value)
+    if not math.isfinite(seconds) or seconds <= 0:
+        raise ValueError("Enter a number greater than zero, or leave blank.")
+    return seconds
 
 
 def timer_text(deadline, duration_seconds=120, now=None):
@@ -169,6 +200,19 @@ def observer_window(updates, commands, display):
         screen = open_window(pg, "test1 | Observer", display)
         clock = pg.time.Clock()
         state = {"phase": "connecting"}
+        limit_input = ""
+        editing_limit = False
+        limit_message = "Blank = no limit. Set before starting."
+        def apply_limit():
+            nonlocal editing_limit, limit_message
+            try:
+                value = parse_response_limit(limit_input)
+            except ValueError:
+                limit_message = "Enter positive seconds, e.g. 3 or 2.5."
+                return
+            commands.put({"response_limit_seconds": value})
+            editing_limit = False
+            limit_message = "No answer limit." if value is None else f"Answer limit: {value:g} seconds."
         running = True
         commands.put("connected")
         while running:
@@ -183,16 +227,36 @@ def observer_window(updates, commands, display):
             resume = pg.Rect(36, h - 154, w - 72, 54)
             sound = pg.Rect(36, h - 84, (w - 88) // 2, 48)
             stop = pg.Rect(w // 2 + 8, h - 84, (w - 88) // 2, 48)
+            limit_rect = pg.Rect(250, h - 265, 140, 44)
+            apply_rect = pg.Rect(406, h - 265, 120, 44)
+            can_edit = state["phase"] == "ready"
+            if not can_edit:
+                editing_limit = False
             for event in pg.event.get():
                 if event.type == pg.QUIT or (event.type == pg.KEYDOWN and event.key == pg.K_ESCAPE):
                     running = False
                 elif event.type == pg.MOUSEBUTTONDOWN and event.button == 1:
-                    if resume.collidepoint(event.pos):
+                    if can_edit and limit_rect.collidepoint(event.pos):
+                        editing_limit = True
+                    elif can_edit and apply_rect.collidepoint(event.pos):
+                        apply_limit()
+                    elif resume.collidepoint(event.pos):
+                        if editing_limit:
+                            apply_limit()
+                            if editing_limit:
+                                continue
                         commands.put("resume")
                     elif sound.collidepoint(event.pos):
                         commands.put("beep")
                     elif stop.collidepoint(event.pos):
                         running = False
+                elif event.type == pg.KEYDOWN and editing_limit:
+                    if event.key in (pg.K_RETURN, pg.K_KP_ENTER):
+                        apply_limit()
+                    elif event.key == pg.K_BACKSPACE:
+                        limit_input = limit_input[:-1]
+                    elif getattr(event, "unicode", "") in "0123456789." and len(limit_input) < 12:
+                        limit_input += getattr(event, "unicode", "")
                 elif event.type == pg.KEYDOWN and event.key == pg.K_SPACE and not getattr(event, "repeat", False):
                     commands.put("resume")
             screen.fill(BG)
@@ -211,11 +275,21 @@ def observer_window(updates, commands, display):
                 if last:
                     draw_text(pg, screen, f"Last response: {'CORRECT' if last['correct'] else 'INCORRECT'}", 222, 27,
                               COLORS["GREEN"] if last["correct"] else COLORS["RED"])
-                    draw_text(pg, screen, f"Selected {last['response']}   /   Expected {last['expected']}", 265, 24)
+                    detail = f"Time limit exceeded   /   Expected {last['expected']}" if last.get("timed_out") else f"Selected {last['response']}   /   Expected {last['expected']}"
+                    draw_text(pg, screen, detail, 265, 24)
                     draw_text(pg, screen, f"{last['condition']} condition   |   {last['response_ms']:.0f} ms", 305, 23, MUTED)
                 if phase == "error":
                     draw_text(pg, screen, 'Prompt: "Please focus on the instruction."', 356, 24)
-                draw_text(pg, screen, state.get("audio", ""), h - 195, 18, MUTED)
+                draw_text(pg, screen, state.get("audio", ""), h - 182, 18, MUTED)
+            draw_text(pg, screen, "Answer limit (seconds)", h - 255, 20, MUTED, center=False)
+            if can_edit:
+                button(pg, screen, limit_rect, limit_input + ("|" if editing_limit else ""), COLORS["BLUE"] if editing_limit else TEXT)
+                button(pg, screen, apply_rect, "Apply")
+                draw_text(pg, screen, "Enter to apply. " + limit_message, h - 208, 18, MUTED)
+            else:
+                value = state.get("response_limit_seconds")
+                draw_text(pg, screen, "Off" if value is None else f"{value:g} s", h - 255, 24, TEXT, center=False, x=270)
+                draw_text(pg, screen, "Answer limit is fixed once the session starts.", h - 208, 18, MUTED)
             button(pg, screen, resume, "Start session / Space" if phase == "ready" else "Continue / Space" if phase == "error" else "Waiting" if phase != "done" else "Complete", accent)
             button(pg, screen, sound, "Test beep")
             button(pg, screen, stop, "End session / Esc")
@@ -239,7 +313,7 @@ def run(args):
     output = Path(args.output)
     output.mkdir(parents=True, exist_ok=True)
     filename = output / (datetime.now(timezone.utc).strftime("session_%Y%m%dT%H%M%S_%fZ") + ".csv")
-    fields = ["trial", "condition", "word", "ink", "expected", "response", "correct", "response_ms", "answered_utc", "seed"]
+    fields = ["trial", "condition", "word", "ink", "expected", "response", "correct", "response_ms", "answered_utc", "seed", "timed_out", "response_limit_seconds"]
     clock = pg.time.Clock()
     correct_until = 0
     connected = False
@@ -253,16 +327,31 @@ def run(args):
             writer = csv.DictWriter(log, fieldnames=fields)
             writer.writeheader()
             log.flush()
+            def save_response(row):
+                nonlocal correct_until
+                if row is None:
+                    return
+                writer.writerow({**row, "seed": args.seed})
+                log.flush()
+                if row["correct"]:
+                    correct_until = time.perf_counter() + .25
+                elif beep:
+                    beep.play()
+                publish()
             publish()
             while running:
                 if not observer.is_alive():
                     break
                 if session.expire():
                     publish()
+                save_response(session.check_timeout(time.perf_counter()))
                 try:
                     while True:
                         command = commands.get_nowait()
-                        if command == "connected":
+                        if isinstance(command, dict) and "response_limit_seconds" in command:
+                            session.set_response_limit(command["response_limit_seconds"])
+                            publish()
+                        elif command == "connected":
                             connected = True
                         elif command == "stop":
                             running = False
@@ -297,14 +386,7 @@ def run(args):
                         response = next((c for c, rect in zip(COLORS, buttons) if rect.collidepoint(event.pos)), None)
                     if response:
                         row = session.respond(response, time.perf_counter())
-                        if row:
-                            writer.writerow({**row, "seed": args.seed})
-                            log.flush()
-                            if row["correct"]:
-                                correct_until = time.perf_counter() + .25
-                            elif beep:
-                                beep.play()
-                            publish()
+                        save_response(row)
                 if session.phase == "correct" and time.perf_counter() >= correct_until:
                     session.advance()
                     publish()
