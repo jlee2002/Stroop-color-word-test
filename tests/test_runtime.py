@@ -30,7 +30,7 @@ class RuntimeTests(unittest.TestCase):
     def test_participant_process_link_and_csv(self):
         with patch.dict(os.environ, {"SDL_VIDEODRIVER": "dummy", "SDL_AUDIODRIVER": "dummy"}):
             import pygame as pg
-            import stroop
+            import test1
             finished = threading.Event()
 
             def answer():
@@ -47,8 +47,8 @@ class RuntimeTests(unittest.TestCase):
                                        fullscreen=False, trials=1, seed=123, output=folder)
                 worker.start()
                 try:
-                    with patch.object(stroop, "observer_window", scripted_observer):
-                        stroop.run(args)
+                    with patch.object(test1, "observer_window", scripted_observer):
+                        test1.run(args)
                 finally:
                     finished.set()
                     worker.join(timeout=2)
@@ -63,7 +63,7 @@ class RuntimeTests(unittest.TestCase):
     def test_observer_render_and_close(self):
         from queue import Queue
         with patch.dict(os.environ, {"SDL_VIDEODRIVER": "dummy", "SDL_AUDIODRIVER": "dummy"}):
-            import stroop
+            import test1
             updates, commands = Queue(), Queue()
             updates.put({"phase": "error", "index": 1, "total": 40, "correct": 0,
                          "answered": 1, "last": {"correct": False, "response": "RED",
@@ -75,7 +75,7 @@ class RuntimeTests(unittest.TestCase):
 
             closer = threading.Thread(target=close)
             closer.start()
-            stroop.observer_window(updates, commands, 0)
+            test1.observer_window(updates, commands, 0)
             closer.join()
             self.assertEqual(commands.get_nowait(), "connected")
             self.assertEqual(commands.get_nowait(), "stop")

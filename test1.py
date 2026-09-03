@@ -1,4 +1,4 @@
-"""Two-window Stroop task. Run with python stroop.py --help."""
+"""Two-window test1 task. Run with python test1.py --help."""
 
 import argparse
 from array import array
@@ -134,7 +134,7 @@ def make_beep(pg):
 def observer_window(updates, commands, display):
     import pygame as pg
     try:
-        screen = open_window(pg, "Stroop | Observer", display)
+        screen = open_window(pg, "test1 | Observer", display)
         clock = pg.time.Clock()
         state = {"phase": "connecting"}
         running = True
@@ -195,7 +195,7 @@ def observer_window(updates, commands, display):
 def run(args):
     import pygame as pg
     key_map = {getattr(pg, f"K_{i}"): color for i, color in enumerate(COLORS, 1)}
-    screen = open_window(pg, "Stroop | Participant", args.participant_display, args.fullscreen)
+    screen = open_window(pg, "test1 | Participant", args.participant_display, args.fullscreen)
     beep = make_beep(pg)
     audio = "Audio ready - test beep before starting" if beep else "AUDIO UNAVAILABLE - visual alerts only"
     session = Session(make_trials(args.trials, args.seed))
@@ -268,7 +268,7 @@ def run(args):
                     session.advance()
                     publish()
                 screen.fill(BG)
-                draw_text(pg, screen, "COLOR / WORD", 45, 22, MUTED)
+                draw_text(pg, screen, "test1", 45, 22, MUTED)
                 if session.phase == "active":
                     trial = session.trial
                     draw_text(pg, screen, "Choose the INK COLOR" if trial.condition == "INK" else "Choose the color NAMED BY THE WORD", 122, 30)

@@ -1,6 +1,6 @@
 import unittest
 
-from stroop import COLORS, Session, make_trials
+from test1 import COLORS, Session, make_trials
 
 
 class SessionTests(unittest.TestCase):
