@@ -14,7 +14,9 @@ import time
 
 
 COLORS = {"RED": (245, 75, 88), "BLUE": (85, 150, 255),
-          "GREEN": (60, 210, 140), "YELLOW": (250, 211, 70)}
+          "GREEN": (60, 210, 140), "YELLOW": (250, 211, 70),
+          "ORANGE": (255, 145, 40), "PURPLE": (175, 105, 240),
+          "PINK": (255, 155, 200), "WHITE": (245, 245, 245)}
 BG = (16, 22, 34)
 PANEL = (29, 39, 56)
 TEXT = (235, 241, 250)
@@ -192,6 +194,7 @@ def observer_window(updates, commands, display):
 
 def run(args):
     import pygame as pg
+    key_map = {getattr(pg, f"K_{i}"): color for i, color in enumerate(COLORS, 1)}
     screen = open_window(pg, "Stroop | Participant", args.participant_display, args.fullscreen)
     beep = make_beep(pg)
     audio = "Audio ready - test beep before starting" if beep else "AUDIO UNAVAILABLE - visual alerts only"
@@ -236,14 +239,18 @@ def run(args):
                 if not running:
                     break
                 w, h = screen.get_size()
-                buttons = [pg.Rect(30 + i * ((w - 60) // 4), h - 140, (w - 60) // 4 - 12, 70) for i in range(4)]
+                columns = 4
+                rows = math.ceil(len(COLORS) / columns)
+                cell_width = (w - 60) // columns
+                buttons = [pg.Rect(30 + (i % columns) * cell_width,
+                                   h - 70 - rows * 76 + (i // columns) * 76,
+                                   cell_width - 12, 64) for i in range(len(COLORS))]
                 for event in pg.event.get():
                     response = None
                     if event.type == pg.QUIT or (event.type == pg.KEYDOWN and event.key == pg.K_ESCAPE):
                         running = False
                         break
                     if event.type == pg.KEYDOWN and not getattr(event, "repeat", False):
-                        key_map = {pg.K_1: "RED", pg.K_2: "BLUE", pg.K_3: "GREEN", pg.K_4: "YELLOW"}
                         response = key_map.get(event.key)
                     elif event.type == pg.MOUSEBUTTONDOWN and event.button == 1:
                         response = next((c for c, rect in zip(COLORS, buttons) if rect.collidepoint(event.pos)), None)
@@ -266,14 +273,14 @@ def run(args):
                     trial = session.trial
                     draw_text(pg, screen, "Choose the INK COLOR" if trial.condition == "INK" else "Choose the color NAMED BY THE WORD", 122, 30)
                     draw_text(pg, screen, "Ignore what the word says." if trial.condition == "INK" else "The word and ink color match.", 167, 23, MUTED)
-                    draw_text(pg, screen, trial.word, h // 2, 90, COLORS[trial.ink])
+                    draw_text(pg, screen, trial.word, h // 2 - 25, 90, COLORS[trial.ink])
                     for i, (color, rect) in enumerate(zip(COLORS, buttons), 1):
                         button(pg, screen, rect, f"{i}  {color}")
                 else:
                     messages = {"ready": "Wait for the observer to start.", "correct": "Response recorded",
                                 "error": "Paused - wait for the observer.", "done": "Session complete. Thank you."}
                     draw_text(pg, screen, messages[session.phase], h // 2, 32)
-                draw_text(pg, screen, "Click an answer or press 1-4   |   Esc to end", h - 35, 19, MUTED)
+                draw_text(pg, screen, f"Click an answer or press 1-{len(COLORS)}   |   Esc to end", h - 35, 19, MUTED)
                 pg.display.flip()
                 if session.phase == "active" and session.onset is None:
                     # Begin timing only after the first frame containing the stimulus.

@@ -37,7 +37,7 @@ class RuntimeTests(unittest.TestCase):
                 while not finished.wait(.1):
                     if pg.display.get_init():
                         try:
-                            pg.event.post(pg.event.Event(pg.KEYDOWN, key=pg.K_1))
+                            pg.event.post(pg.event.Event(pg.KEYDOWN, key=pg.K_8))
                         except pg.error:
                             pass
 
@@ -57,7 +57,7 @@ class RuntimeTests(unittest.TestCase):
                 with files[0].open(newline="", encoding="utf-8") as log:
                     rows = list(csv.DictReader(log))
                 self.assertEqual(len(rows), 1)
-                self.assertEqual(rows[0]["response"], "RED")
+                self.assertEqual(rows[0]["response"], "WHITE")
                 self.assertGreaterEqual(float(rows[0]["response_ms"]), 0)
 
     def test_observer_render_and_close(self):

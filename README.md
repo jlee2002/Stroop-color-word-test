@@ -23,7 +23,7 @@ python -m venv .venv
 .\.venv\Scripts\python.exe stroop.py
 ```
 
-Both windows open on display 0 by default for setup on a single monitor. Move them apart using their title bars. Click **Test beep**, then **Start session** in the observer window. The participant clicks a choice or uses **1 = red, 2 = blue, 3 = green, 4 = yellow**. Keyboard answers require participant-window focus; clicking an answer also works. Observer controls use the same computer's mouse; a second keyboard is not independently assigned to the observer.
+Both windows open on display 0 by default for setup on a single monitor. Move them apart using their title bars. Click **Test beep**, then **Start session** in the observer window. The participant clicks a choice in the two-row answer grid or uses **1 = red, 2 = blue, 3 = green, 4 = yellow, 5 = orange, 6 = purple, 7 = pink, 8 = white**. All eight colors are available as words and ink colors. Keyboard answers require participant-window focus; clicking an answer also works. Observer controls use the same computer's mouse; a second keyboard is not independently assigned to the observer.
 
 For two monitors, set Windows displays to **Extend**, then run:
 
