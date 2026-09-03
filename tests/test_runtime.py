@@ -16,8 +16,6 @@ def scripted_observer(updates, commands, display):
     commands.put("resume")
     while True:
         state = updates.get(timeout=10)
-        if state["phase"] == "error":
-            commands.put("resume")
         if state["phase"] == "done":
             commands.put("stop")
             return
@@ -27,17 +25,19 @@ def scripted_observer(updates, commands, display):
 
 @unittest.skipUnless(importlib.util.find_spec("pygame"), "Pygame not installed")
 class RuntimeTests(unittest.TestCase):
-    def test_participant_process_link_and_csv(self):
+    def test_space_resumes_error_from_participant_window_and_saves_csv(self):
         with patch.dict(os.environ, {"SDL_VIDEODRIVER": "dummy", "SDL_AUDIODRIVER": "dummy"}):
             import pygame as pg
-            import test1
+            import stroop
             finished = threading.Event()
 
             def answer():
+                press_space = False
                 while not finished.wait(.1):
                     if pg.display.get_init():
                         try:
-                            pg.event.post(pg.event.Event(pg.KEYDOWN, key=pg.K_8))
+                            pg.event.post(pg.event.Event(pg.KEYDOWN, key=pg.K_SPACE if press_space else pg.K_8))
+                            press_space = not press_space
                         except pg.error:
                             pass
 
@@ -47,8 +47,8 @@ class RuntimeTests(unittest.TestCase):
                                        fullscreen=False, trials=1, seed=123, output=folder)
                 worker.start()
                 try:
-                    with patch.object(test1, "observer_window", scripted_observer):
-                        test1.run(args)
+                    with patch.object(stroop, "observer_window", scripted_observer):
+                        stroop.run(args)
                 finally:
                     finished.set()
                     worker.join(timeout=2)
@@ -58,12 +58,13 @@ class RuntimeTests(unittest.TestCase):
                     rows = list(csv.DictReader(log))
                 self.assertEqual(len(rows), 1)
                 self.assertEqual(rows[0]["response"], "WHITE")
+                self.assertEqual(rows[0]["correct"], "False")
                 self.assertGreaterEqual(float(rows[0]["response_ms"]), 0)
 
     def test_observer_render_and_close(self):
         from queue import Queue
         with patch.dict(os.environ, {"SDL_VIDEODRIVER": "dummy", "SDL_AUDIODRIVER": "dummy"}):
-            import test1
+            import stroop
             updates, commands = Queue(), Queue()
             updates.put({"phase": "error", "index": 1, "total": 40, "correct": 0,
                          "answered": 1, "last": {"correct": False, "response": "RED",
@@ -75,7 +76,7 @@ class RuntimeTests(unittest.TestCase):
 
             closer = threading.Thread(target=close)
             closer.start()
-            test1.observer_window(updates, commands, 0)
+            stroop.observer_window(updates, commands, 0)
             closer.join()
             self.assertEqual(commands.get_nowait(), "connected")
             self.assertEqual(commands.get_nowait(), "stop")

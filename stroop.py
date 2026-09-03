@@ -1,4 +1,4 @@
-"""Two-window test1 task. Run with python test1.py --help."""
+"""Two-window test1 task. Run with python stroop.py --help."""
 
 import argparse
 from array import array
@@ -161,7 +161,7 @@ def observer_window(updates, commands, display):
                         commands.put("beep")
                     elif stop.collidepoint(event.pos):
                         running = False
-                elif event.type == pg.KEYDOWN and event.key == pg.K_SPACE:
+                elif event.type == pg.KEYDOWN and event.key == pg.K_SPACE and not getattr(event, "repeat", False):
                     commands.put("resume")
             screen.fill(BG)
             draw_text(pg, screen, "OBSERVER CONSOLE", 40, 20, MUTED)
@@ -182,7 +182,7 @@ def observer_window(updates, commands, display):
                 if phase == "error":
                     draw_text(pg, screen, 'Prompt: "Please focus on the instruction."', 356, 24)
                 draw_text(pg, screen, state.get("audio", ""), h - 195, 18, MUTED)
-            button(pg, screen, resume, "Start session" if phase == "ready" else "Continue after error" if phase == "error" else "Waiting" if phase != "done" else "Complete", accent)
+            button(pg, screen, resume, "Start session / Space" if phase == "ready" else "Continue / Space" if phase == "error" else "Waiting" if phase != "done" else "Complete", accent)
             button(pg, screen, sound, "Test beep")
             button(pg, screen, stop, "End session / Esc")
             pg.display.flip()
@@ -251,7 +251,11 @@ def run(args):
                         running = False
                         break
                     if event.type == pg.KEYDOWN and not getattr(event, "repeat", False):
-                        response = key_map.get(event.key)
+                        if event.key == pg.K_SPACE and connected and session.phase in ("ready", "error"):
+                            session.advance()
+                            publish()
+                        else:
+                            response = key_map.get(event.key)
                     elif event.type == pg.MOUSEBUTTONDOWN and event.button == 1:
                         response = next((c for c, rect in zip(COLORS, buttons) if rect.collidepoint(event.pos)), None)
                     if response:

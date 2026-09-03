@@ -11,7 +11,7 @@ The repository's original [experiment overview](docs/experiment-overview.md) des
 
 The conditions are shuffled together, with equal counts (one extra INK trial when the total is odd). Consecutive trials may use the same condition. Colors are sampled independently; color frequencies are not counterbalanced. Each trial shows its instruction. This implements the two conditions described above, not a full factorial Stroop protocol.
 
-Correct answers advance after 650 ms. Wrong answers play a short beep and pause the task. The observer sees the expected answer, selected answer, response time, and a suggested focus reminder. The observer clicks **Continue after error** to move to the next trial. The failed trial is recorded once and is not retried. There is no response deadline.
+Correct answers advance after 650 ms. Wrong answers play a short beep and pause the task. The observer sees the expected answer, selected answer, response time, and a suggested focus reminder. The observer presses **Space** (or clicks **Continue / Space**) to move to the next trial. Space works with either game window focused, so the participant can keep using the mouse. Space also starts a waiting session; it does nothing during an active trial or after completion. The failed trial is recorded once and is not retried. There is no response deadline.
 
 ## Install and run
 
@@ -20,15 +20,15 @@ Install Python 3.10–3.12, then run from this folder:
 ```powershell
 python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt
-.\.venv\Scripts\python.exe test1.py
+.\.venv\Scripts\python.exe stroop.py
 ```
 
-Both windows open on display 0 by default for setup on a single monitor. Move them apart using their title bars. Click **Test beep**, then **Start session** in the observer window. The participant clicks a choice in the two-row answer grid or uses **1 = red, 2 = blue, 3 = green, 4 = yellow, 5 = orange, 6 = purple, 7 = pink, 8 = white**. All eight colors are available as words and ink colors. Keyboard answers require participant-window focus; clicking an answer also works. Observer controls use the same computer's mouse; a second keyboard is not independently assigned to the observer.
+Both windows open on display 0 by default for setup on a single monitor. Move them apart using their title bars. Click **Test beep**, then press **Space** to start. The participant clicks a choice in the two-row answer grid or uses **1 = red, 2 = blue, 3 = green, 4 = yellow, 5 = orange, 6 = purple, 7 = pink, 8 = white**. All eight colors are available as words and ink colors. Keyboard answers require participant-window focus; clicking an answer also works. The observer can use the keyboard's Space key while the participant uses the mouse. Either game window must be focused; Space is not a system-wide shortcut. Keyboards attached to this computer share input, so Space is not restricted to a particular person or keyboard.
 
 For two monitors, set Windows displays to **Extend**, then run:
 
 ```powershell
-.\.venv\Scripts\python.exe test1.py --participant-display 1 --observer-display 0 --fullscreen --trials 40
+.\.venv\Scripts\python.exe stroop.py --participant-display 1 --observer-display 0 --fullscreen --trials 40
 ```
 
 Display indices are zero-based. Swap 0 and 1 if necessary. Omit `--fullscreen` to use movable windows. Pygame runs each window in a separate process, with local queues connecting them. No server or network connection is required.
