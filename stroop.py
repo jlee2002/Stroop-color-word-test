@@ -50,27 +50,52 @@ def make_trials(count, seed=None):
 
 class Session:
     """State machine independent of graphics; observer resumes every error."""
-    def __init__(self, trials):
+    def __init__(self, trials, duration_seconds=None, seed=None):
         self.trials = trials
         self.index = 0
         self.phase = "ready"
         self.onset = None
         self.last = None
         self.rows = []
+        self.duration_seconds = duration_seconds
+        self.deadline = None
+        self.batch_size = len(trials)
+        self.refill_rng = random.Random(seed)
+
+    def remaining(self, now=None):
+        if self.deadline is None:
+            return self.duration_seconds or 0
+        now = time.perf_counter() if now is None else now
+        return max(0, self.deadline - now)
+
+    def expire(self, now=None):
+        if self.deadline is not None and self.remaining(now) <= 0 and self.phase != "done":
+            self.phase = "done"
+            self.onset = None
+            return True
+        return False
 
     @property
     def trial(self):
         return self.trials[self.index] if self.index < len(self.trials) else None
 
-    def advance(self):
+    def advance(self, now=None):
+        if self.expire(now):
+            return
         if self.phase not in ("ready", "correct", "error"):
             return
+        if self.phase == "ready" and self.duration_seconds is not None:
+            now = time.perf_counter() if now is None else now
+            self.deadline = now + self.duration_seconds
         if self.phase != "ready":
             self.index += 1
+        if self.index == len(self.trials) and self.duration_seconds is not None:
+            self.trials.extend(make_trials(self.batch_size, self.refill_rng.getrandbits(32)))
         self.phase = "done" if self.index == len(self.trials) else "active"
         self.onset = None
 
     def respond(self, color, now):
+        self.expire(now)
         if self.phase != "active" or self.onset is None or color not in COLORS:
             return None
         trial = self.trial
@@ -87,7 +112,14 @@ class Session:
         return {"phase": self.phase, "index": min(self.index + 1, len(self.trials)),
                 "total": len(self.trials), "answered": len(self.rows),
                 "correct": sum(r["correct"] for r in self.rows),
+                "deadline": self.deadline, "duration_seconds": self.duration_seconds,
                 "last": self.last}
+
+
+def timer_text(deadline, duration_seconds=120, now=None):
+    now = time.perf_counter() if now is None else now
+    seconds = math.ceil(max(0, deadline - now) if deadline is not None else (duration_seconds or 0))
+    return f"{seconds // 60:02d}:{seconds % 60:02d}"
 
 
 def draw_text(pg, screen, text, y, size=28, color=TEXT, center=True, x=36):
@@ -165,6 +197,8 @@ def observer_window(updates, commands, display):
                     commands.put("resume")
             screen.fill(BG)
             draw_text(pg, screen, "OBSERVER CONSOLE", 40, 20, MUTED)
+            draw_text(pg, screen, timer_text(state.get("deadline"), state.get("duration_seconds", 120)),
+                      22, 28, TEXT, center=False, x=w - 120)
             phase = state["phase"]
             titles = {"connecting": "Connecting...", "ready": "Ready to begin",
                       "active": "Participant responding", "correct": "Correct",
@@ -172,7 +206,7 @@ def observer_window(updates, commands, display):
             accent = COLORS["RED"] if phase == "error" else COLORS["GREEN"] if phase in ("correct", "done") else TEXT
             draw_text(pg, screen, titles.get(phase, phase), 100, 34, accent)
             if "total" in state:
-                draw_text(pg, screen, f"Trial {state['index']} / {state['total']}     |     Correct {state['correct']} / {state['answered']}", 160, 24)
+                draw_text(pg, screen, f"Trial {state['index']}     |     Correct {state['correct']} / {state['answered']}", 160, 24)
                 last = state.get("last")
                 if last:
                     draw_text(pg, screen, f"Last response: {'CORRECT' if last['correct'] else 'INCORRECT'}", 222, 27,
@@ -198,7 +232,7 @@ def run(args):
     screen = open_window(pg, "test1 | Participant", args.participant_display, args.fullscreen)
     beep = make_beep(pg)
     audio = "Audio ready - test beep before starting" if beep else "AUDIO UNAVAILABLE - visual alerts only"
-    session = Session(make_trials(args.trials, args.seed))
+    session = Session(make_trials(args.trials, args.seed), duration_seconds=args.duration, seed=args.seed)
     ctx = mp.get_context("spawn")
     updates, commands = ctx.Queue(), ctx.Queue()
     observer = ctx.Process(target=observer_window, args=(updates, commands, args.observer_display))
@@ -210,6 +244,7 @@ def run(args):
     correct_until = 0
     connected = False
     running = True
+    last_update = 0
     def publish():
         updates.put({**session.snapshot(), "audio": audio})
     observer.start()
@@ -222,6 +257,8 @@ def run(args):
             while running:
                 if not observer.is_alive():
                     break
+                if session.expire():
+                    publish()
                 try:
                     while True:
                         command = commands.get_nowait()
@@ -264,15 +301,21 @@ def run(args):
                             writer.writerow({**row, "seed": args.seed})
                             log.flush()
                             if row["correct"]:
-                                correct_until = time.perf_counter() + .65
+                                correct_until = time.perf_counter() + .25
                             elif beep:
                                 beep.play()
                             publish()
                 if session.phase == "correct" and time.perf_counter() >= correct_until:
                     session.advance()
                     publish()
+                session.expire()
+                if time.perf_counter() - last_update >= .1:
+                    publish()
+                    last_update = time.perf_counter()
                 screen.fill(BG)
                 draw_text(pg, screen, "test1", 45, 22, MUTED)
+                draw_text(pg, screen, timer_text(session.deadline, session.duration_seconds),
+                          22, 28, TEXT, center=False, x=w - 120)
                 if session.phase == "active":
                     trial = session.trial
                     draw_text(pg, screen, "Choose the INK COLOR" if trial.condition == "INK" else "Choose the color NAMED BY THE WORD", 122, 30)
@@ -280,8 +323,8 @@ def run(args):
                     draw_text(pg, screen, trial.word, h // 2 - 25, 90, COLORS[trial.ink])
                     for i, (color, rect) in enumerate(zip(COLORS, buttons), 1):
                         button(pg, screen, rect, f"{i}  {color}")
-                else:
-                    messages = {"ready": "Wait for the observer to start.", "correct": "Response recorded",
+                elif session.phase != "correct":
+                    messages = {"ready": "Wait for the observer to start.",
                                 "error": "Paused - wait for the observer.", "done": "Session complete. Thank you."}
                     draw_text(pg, screen, messages[session.phase], h // 2, 32)
                 draw_text(pg, screen, f"Click an answer or press 1-{len(COLORS)}   |   Esc to end", h - 35, 19, MUTED)
@@ -302,7 +345,8 @@ def run(args):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--trials", type=int, default=40)
+    parser.add_argument("--trials", type=int, default=40, help="Trials per shuffled batch; batches refill until time expires")
+    parser.add_argument("--duration", type=float, default=120, help="Session duration in seconds (default: 120)")
     parser.add_argument("--seed", type=int, help="Seed for repeatable trial order")
     parser.add_argument("--participant-display", type=int, default=0)
     parser.add_argument("--observer-display", type=int, default=0)
@@ -311,6 +355,8 @@ def main():
     args = parser.parse_args()
     if args.trials < 1:
         parser.error("--trials must be positive")
+    if not math.isfinite(args.duration) or args.duration <= 0:
+        parser.error("--duration must be a positive finite number")
     if args.fullscreen and args.participant_display == args.observer_display:
         parser.error("Fullscreen requires different participant and observer displays")
     if args.seed is None:

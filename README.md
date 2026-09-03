@@ -9,9 +9,11 @@ The repository's original [experiment overview](docs/experiment-overview.md) des
 - **INK:** a color word is printed in a different color. Choose the ink color, ignoring the word.
 - **WORD:** the word and ink color match. Choose the color named by the word.
 
-The conditions are shuffled together, with equal counts (one extra INK trial when the total is odd). Consecutive trials may use the same condition. Colors are sampled independently; color frequencies are not counterbalanced. Each trial shows its instruction. This implements the two conditions described above, not a full factorial Stroop protocol.
+The session lasts **two minutes**, starting when the observer presses Space or Start. Both windows show the same countdown from **02:00** to **00:00**. The clock continues during error pauses and between trials. At zero, the task ends automatically and no further answers are accepted.
 
-Correct answers advance after 650 ms. Wrong answers play a short beep and pause the task. The observer sees the expected answer, selected answer, response time, and a suggested focus reminder. The observer presses **Space** (or clicks **Continue / Space**) to move to the next trial. Space works with either game window focused, so the participant can keep using the mouse. Space also starts a waiting session; it does nothing during an active trial or after completion. The failed trial is recorded once and is not retried. There is no response deadline.
+The conditions are shuffled in batches of 40, with equal counts (one extra INK trial when a batch has an odd size). New batches are generated as needed until time expires; 40 is not a session limit. The number of completed trials and the condition counts depend on response speed and pauses. Consecutive trials may use the same condition. Colors are sampled independently; color frequencies are not counterbalanced. Each trial shows its instruction. This implements the two conditions described above, not a full factorial Stroop protocol.
+
+Correct answers advance after a **250 ms blank stimulus interval**, with the countdown still visible. Participants no longer see a response-confirmation message. Wrong answers play a short beep and pause the task, but not the countdown. The observer sees the expected answer, selected answer, response time, and a suggested focus reminder. The observer presses **Space** (or clicks **Continue / Space**) to move to the next trial. Space works with either game window focused, so the participant can keep using the mouse. Space also starts a waiting session; it does nothing during an active trial or after completion. The failed trial is recorded once and is not retried. There is no per-trial response deadline other than the session ending.
 
 ## Install and run
 
@@ -33,7 +35,7 @@ For two monitors, set Windows displays to **Extend**, then run:
 
 Display indices are zero-based. Swap 0 and 1 if necessary. Omit `--fullscreen` to use movable windows. Pygame runs each window in a separate process, with local queues connecting them. No server or network connection is required.
 
-Use `--seed 123` to reproduce a trial order. Press **Esc** or close either window to stop. After completion, close either window to exit. Sound uses the computer's default audio output, not a monitor-specific output. The observer displays an audio-unavailable notice if initialization fails; test the beep before a session.
+Use `--seed 123` to reproduce a trial order. The default duration is 120 seconds; `--duration 10` runs a short setup check. `--trials` controls the shuffled batch size, not the session length. Press **Esc** or close either window to stop early. After completion, close either window to exit. Sound uses the computer's default audio output, not a monitor-specific output. The observer displays an audio-unavailable notice if initialization fails; test the beep before a session.
 
 ## Results
 

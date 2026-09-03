@@ -25,6 +25,17 @@ def scripted_observer(updates, commands, display):
 
 @unittest.skipUnless(importlib.util.find_spec("pygame"), "Pygame not installed")
 class RuntimeTests(unittest.TestCase):
+    def test_timer_finishes_without_any_response(self):
+        with patch.dict(os.environ, {"SDL_VIDEODRIVER": "dummy", "SDL_AUDIODRIVER": "dummy"}):
+            import stroop
+            with tempfile.TemporaryDirectory() as folder:
+                args = SimpleNamespace(participant_display=0, observer_display=0,
+                                       fullscreen=False, trials=40, seed=123, output=folder, duration=.2)
+                with patch.object(stroop, "observer_window", scripted_observer):
+                    stroop.run(args)
+                with next(Path(folder).glob("*.csv")).open(newline="", encoding="utf-8") as log:
+                    self.assertEqual(list(csv.DictReader(log)), [])
+
     def test_space_resumes_error_from_participant_window_and_saves_csv(self):
         with patch.dict(os.environ, {"SDL_VIDEODRIVER": "dummy", "SDL_AUDIODRIVER": "dummy"}):
             import pygame as pg
@@ -44,7 +55,7 @@ class RuntimeTests(unittest.TestCase):
             worker = threading.Thread(target=answer, daemon=True)
             with tempfile.TemporaryDirectory() as folder:
                 args = SimpleNamespace(participant_display=0, observer_display=0,
-                                       fullscreen=False, trials=1, seed=123, output=folder)
+                                       fullscreen=False, trials=1, seed=123, output=folder, duration=None)
                 worker.start()
                 try:
                     with patch.object(stroop, "observer_window", scripted_observer):

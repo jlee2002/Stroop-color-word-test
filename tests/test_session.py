@@ -1,9 +1,38 @@
 import unittest
 
-from stroop import COLORS, Session, make_trials
+from stroop import COLORS, Session, make_trials, timer_text
 
 
 class SessionTests(unittest.TestCase):
+    def test_timer_starts_on_start_and_expires_during_error_pause(self):
+        session = Session(make_trials(2, 1), duration_seconds=120)
+        self.assertEqual(session.remaining(500), 120)
+        session.advance(now=500)
+        session.onset = 500
+        wrong = next(c for c in COLORS if c != session.trial.answer)
+        session.respond(wrong, 501)
+        self.assertEqual(session.remaining(560), 60)
+        self.assertTrue(session.expire(620))
+        self.assertEqual(session.phase, "done")
+        session.advance(now=621)
+        self.assertEqual(session.phase, "done")
+        self.assertEqual(timer_text(session.deadline, now=621), "00:00")
+
+    def test_timed_session_refills_and_rejects_answers_at_deadline(self):
+        session = Session(make_trials(1, 1), duration_seconds=120, seed=1)
+        session.advance(now=0)
+        session.onset = 0
+        session.respond(session.trial.answer, 1)
+        session.advance(now=2)
+        self.assertEqual(session.phase, "active")
+        self.assertEqual(session.index, 1)
+        session.onset = 2
+        self.assertIsNone(session.respond(session.trial.answer, 120))
+        self.assertEqual(len(session.rows), 1)
+        self.assertEqual(session.phase, "done")
+        self.assertEqual(timer_text(None), "02:00")
+        self.assertEqual(timer_text(120, now=60), "01:00")
+
     def test_conditions_and_reproducible_order(self):
         trials = make_trials(40, 17)
         self.assertEqual(trials, make_trials(40, 17))
