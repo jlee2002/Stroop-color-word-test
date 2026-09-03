@@ -1,22 +1,54 @@
-# Stroop-color-word-test
-A modified Stroop Color Test developed for an IRB-approved human-subject experiment in Purdue University's Snowball Lab. The task alternates between color-identification and word-identification trials to induce cognitive stress and study physiological responses associated with blood pressure changes.
+# Stroop color / word task
 
-This project implements a modified Stroop Color Test for use in a NIRB experiment conducted in the Snowball Lab. The Stroop test is a cognitive task that measures interference between the meaning of a word and the visual color in which that word is displayed. When the word and its displayed color conflict, participants must suppress the automatic tendency to read the word and instead respond according to the task instruction.
+A Python + Pygame experiment prototype with separate participant and observer windows.
 
-This experiment uses two variations of the Stroop task:
+The repository's original [experiment overview](docs/experiment-overview.md) describes the Snowball Lab study context.
 
-1. Color Identification (Incongruent Stroop Task)
-A color word is displayed in a font color that may differ from the color named by the word. The participant must select the displayed font color, rather than the color represented by the word.
+## Trial rules
 
-For example, if the word "BLUE" is displayed in red, the correct response is red.
+- **INK:** a color word is printed in a different color. Choose the ink color, ignoring the word.
+- **WORD:** the word and ink color match. Choose the color named by the word.
 
-2. Word Identification (Congruent Stroop Task)
-A color word is displayed using the same color represented by the word. The participant must select the color indicated by the word.
+The conditions are shuffled together, with equal counts (one extra INK trial when the total is odd). Consecutive trials may use the same condition. Colors are sampled independently; color frequencies are not counterbalanced. Each trial shows its instruction. This implements the two conditions described above, not a full factorial Stroop protocol.
 
-For example, if "GREEN" is displayed in green, the correct response is green.
+Correct answers advance after 650 ms. Wrong answers play a short beep and pause the task. The observer sees the expected answer, selected answer, response time, and a suggested focus reminder. The observer clicks **Continue after error** to move to the next trial. The failed trial is recorded once and is not retried. There is no response deadline.
 
-Trials from these two conditions are presented in randomized order. The task is designed to introduce cognitive demand and stress as part of the NIRB experimental protocol in the Snowball Lab, where physiological responses such as changes related to blood pressure can be studied.
+## Install and run
 
-The experiment uses a dual-monitor setup. One monitor presents the Stroop task to the participant, while a second monitor provides the experiment observer with information about the participant's responses. When an incorrect response occurs, the program produces an audible beep and pauses the task. The observer can then provide the standardized experimental feedback before allowing the participant to continue.
+Install Python 3.10–3.12, then run from this folder:
 
-The system also records trial information such as the Stroop condition, stimulus, participant response, response accuracy, reaction time, and relevant event timestamps for subsequent analysis with physiological measurements.
+```powershell
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+.\.venv\Scripts\python.exe stroop.py
+```
+
+Both windows open on display 0 by default for setup on a single monitor. Move them apart using their title bars. Click **Test beep**, then **Start session** in the observer window. The participant clicks a choice or uses **1 = red, 2 = blue, 3 = green, 4 = yellow**. Keyboard answers require participant-window focus; clicking an answer also works. Observer controls use the same computer's mouse; a second keyboard is not independently assigned to the observer.
+
+For two monitors, set Windows displays to **Extend**, then run:
+
+```powershell
+.\.venv\Scripts\python.exe stroop.py --participant-display 1 --observer-display 0 --fullscreen --trials 40
+```
+
+Display indices are zero-based. Swap 0 and 1 if necessary. Omit `--fullscreen` to use movable windows. Pygame runs each window in a separate process, with local queues connecting them. No server or network connection is required.
+
+Use `--seed 123` to reproduce a trial order. Press **Esc** or close either window to stop. After completion, close either window to exit. Sound uses the computer's default audio output, not a monitor-specific output. The observer displays an audio-unavailable notice if initialization fails; test the beep before a session.
+
+## Results
+
+Each run creates a timestamped CSV in `results/`, flushed after each response. Columns include trial number, condition, word, ink, expected/selected answer, correctness, response time in milliseconds, UTC response timestamp, and random seed. Unanswered trials are not recorded. Files remain local and are excluded from Git by `.gitignore`.
+
+Timing starts immediately after Pygame flips the first stimulus frame. These are software response times, not calibrated display-onset measurements. This prototype does not measure blood pressure or establish that a session increases it. The intended experimental protocol and any BP measurement procedure are separate from the app.
+
+## Development
+
+```powershell
+python -m unittest discover -s tests -v
+```
+
+Before collecting data, check both physical monitors, participant input focus, the audible beep, error pause/resume, and CSV output on the actual experiment computer.
+
+## GitHub
+
+Source and tests are maintained at [jlee2002/Stroop-color-word-test](https://github.com/jlee2002/Stroop-color-word-test). Keep participant results in the ignored `results/` directory.
