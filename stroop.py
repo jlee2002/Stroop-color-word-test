@@ -109,6 +109,23 @@ class Session:
             return None
         return self._record(color, now)
 
+    def grade(self, correct, now, trial_index):
+        if trial_index != self.index + 1 or self.phase != "active" or self.onset is None:
+            return None
+        timeout = self.check_timeout(now)
+        if timeout or self.phase != "active":
+            return timeout
+        return self._record("OBSERVER_CORRECT" if correct else "OBSERVER_INCORRECT",
+                            now, judged_correct=correct)
+
+    def restart(self, seed):
+        if self.phase != "done":
+            return False
+        limit = self.response_limit_seconds
+        self.__init__(make_trials(self.batch_size, seed), self.duration_seconds, seed)
+        self.response_limit_seconds = limit
+        return True
+
     def check_timeout(self, now):
         self.expire(now)
         if (self.phase == "active" and self.onset is not None
@@ -117,9 +134,9 @@ class Session:
             return self._record("TIMEOUT", now, timed_out=True)
         return None
 
-    def _record(self, color, now, timed_out=False):
+    def _record(self, color, now, timed_out=False, judged_correct=None):
         trial = self.trial
-        correct = not timed_out and color == trial.answer
+        correct = not timed_out and (color == trial.answer if judged_correct is None else judged_correct)
         self.last = {"trial": self.index + 1, **asdict(trial),
                      "expected": trial.answer, "response": color,
                      "correct": correct, "response_ms": round((now - self.onset) * 1000, 2),
@@ -135,6 +152,7 @@ class Session:
                 "correct": sum(r["correct"] for r in self.rows),
                 "deadline": self.deadline, "duration_seconds": self.duration_seconds,
                 "response_limit_seconds": self.response_limit_seconds,
+                "expected": self.trial.answer if self.phase == "active" else None,
                 "last": self.last}
 
 
@@ -176,7 +194,7 @@ def open_window(pg, title, display, fullscreen=False):
         raise ValueError(f"Display {display} does not exist; available: 0..{len(desktops)-1}")
     size = desktops[display] if fullscreen else (min(960, desktops[display][0] - 60), min(680, desktops[display][1] - 80))
     pg.display.set_caption(title)
-    return pg.display.set_mode(size, pg.FULLSCREEN if fullscreen else 0, display=display)
+    return pg.display.set_mode(size, pg.FULLSCREEN if fullscreen else pg.RESIZABLE, display=display)
 
 
 def make_beep(pg):
@@ -194,10 +212,10 @@ def make_beep(pg):
         return None
 
 
-def observer_window(updates, commands, display):
+def observer_window(updates, commands, display, fullscreen=False):
     import pygame as pg
     try:
-        screen = open_window(pg, "test1 | Observer", display)
+        screen = open_window(pg, "test1 | Observer", display, fullscreen)
         clock = pg.time.Clock()
         state = {"phase": "connecting"}
         limit_input = ""
@@ -229,34 +247,48 @@ def observer_window(updates, commands, display):
             stop = pg.Rect(w // 2 + 8, h - 84, (w - 88) // 2, 48)
             limit_rect = pg.Rect(250, h - 265, 140, 44)
             apply_rect = pg.Rect(406, h - 265, 120, 44)
+            right = pg.Rect(w // 2 + 8, 285, (w - 88) // 2, 54)
+            wrong = pg.Rect(36, 285, (w - 88) // 2, 54)
             can_edit = state["phase"] == "ready"
             if not can_edit:
                 editing_limit = False
             for event in pg.event.get():
                 if event.type == pg.QUIT or (event.type == pg.KEYDOWN and event.key == pg.K_ESCAPE):
                     running = False
+                elif event.type == pg.KEYDOWN and event.key == pg.K_F11 and not getattr(event, "repeat", False):
+                    fullscreen = not fullscreen
+                    screen = open_window(pg, "test1 | Observer", display, fullscreen)
                 elif event.type == pg.MOUSEBUTTONDOWN and event.button == 1:
                     if can_edit and limit_rect.collidepoint(event.pos):
                         editing_limit = True
                     elif can_edit and apply_rect.collidepoint(event.pos):
                         apply_limit()
-                    elif resume.collidepoint(event.pos):
+                    elif state["phase"] == "active" and (right.collidepoint(event.pos) or wrong.collidepoint(event.pos)):
+                        commands.put({"grade": right.collidepoint(event.pos), "trial": state["index"]})
+                    elif resume.collidepoint(event.pos) and state["phase"] in ("ready", "done"):
                         if editing_limit:
                             apply_limit()
                             if editing_limit:
                                 continue
-                        commands.put("resume")
+                        commands.put("restart" if state["phase"] == "done" else "resume")
                     elif sound.collidepoint(event.pos):
                         commands.put("beep")
                     elif stop.collidepoint(event.pos):
                         running = False
                 elif event.type == pg.KEYDOWN and editing_limit:
-                    if event.key in (pg.K_RETURN, pg.K_KP_ENTER):
+                    if event.key == pg.K_SPACE:
+                        apply_limit()
+                        if not editing_limit:
+                            commands.put("resume")
+                    elif event.key in (pg.K_RETURN, pg.K_KP_ENTER):
                         apply_limit()
                     elif event.key == pg.K_BACKSPACE:
                         limit_input = limit_input[:-1]
                     elif getattr(event, "unicode", "") in "0123456789." and len(limit_input) < 12:
                         limit_input += getattr(event, "unicode", "")
+                elif (event.type == pg.KEYDOWN and event.key in (pg.K_LEFT, pg.K_RIGHT)
+                      and not getattr(event, "repeat", False) and state["phase"] == "active"):
+                    commands.put({"grade": event.key == pg.K_RIGHT, "trial": state["index"]})
                 elif event.type == pg.KEYDOWN and event.key == pg.K_SPACE and not getattr(event, "repeat", False):
                     commands.put("resume")
             screen.fill(BG)
@@ -272,10 +304,14 @@ def observer_window(updates, commands, display):
             if "total" in state:
                 draw_text(pg, screen, f"Trial {state['index']}     |     Correct {state['correct']} / {state['answered']}", 160, 24)
                 last = state.get("last")
-                if last:
+                if phase == "active":
+                    draw_text(pg, screen, f"Expected answer: {state.get('expected', '')}", 225, 32)
+                    button(pg, screen, right, "Correct / Right arrow", COLORS["GREEN"])
+                    button(pg, screen, wrong, "Incorrect / Left arrow", COLORS["RED"])
+                elif last:
                     draw_text(pg, screen, f"Last response: {'CORRECT' if last['correct'] else 'INCORRECT'}", 222, 27,
                               COLORS["GREEN"] if last["correct"] else COLORS["RED"])
-                    detail = f"Time limit exceeded   /   Expected {last['expected']}" if last.get("timed_out") else f"Selected {last['response']}   /   Expected {last['expected']}"
+                    detail = f"Time limit exceeded   /   Expected {last['expected']}" if last.get("timed_out") else f"Observer scored {'correct' if last['correct'] else 'incorrect'} / Expected {last['expected']}"
                     draw_text(pg, screen, detail, 265, 24)
                     draw_text(pg, screen, f"{last['condition']} condition   |   {last['response_ms']:.0f} ms", 305, 23, MUTED)
                 if phase == "error":
@@ -290,7 +326,7 @@ def observer_window(updates, commands, display):
                 value = state.get("response_limit_seconds")
                 draw_text(pg, screen, "Off" if value is None else f"{value:g} s", h - 255, 24, TEXT, center=False, x=270)
                 draw_text(pg, screen, "Answer limit is fixed once the session starts.", h - 208, 18, MUTED)
-            button(pg, screen, resume, "Start session / Space" if phase == "ready" else "Continue / Space" if phase == "error" else "Waiting" if phase != "done" else "Complete", accent)
+            button(pg, screen, resume, "Start session / Space" if phase == "ready" else "Paused - press Space to continue" if phase == "error" else "Waiting" if phase != "done" else "Restart with shuffle", accent)
             button(pg, screen, sound, "Test beep")
             button(pg, screen, stop, "End session / Esc")
             pg.display.flip()
@@ -302,19 +338,20 @@ def observer_window(updates, commands, display):
 
 def run(args):
     import pygame as pg
-    key_map = {getattr(pg, f"K_{i}"): color for i, color in enumerate(COLORS, 1)}
-    screen = open_window(pg, "test1 | Participant", args.participant_display, args.fullscreen)
+    fullscreen = args.fullscreen
+    screen = open_window(pg, "test1 | Participant", args.participant_display, fullscreen)
     beep = make_beep(pg)
     audio = "Audio ready - test beep before starting" if beep else "AUDIO UNAVAILABLE - visual alerts only"
     session = Session(make_trials(args.trials, args.seed), duration_seconds=args.duration, seed=args.seed)
     ctx = mp.get_context("spawn")
     updates, commands = ctx.Queue(), ctx.Queue()
-    observer = ctx.Process(target=observer_window, args=(updates, commands, args.observer_display))
+    observer = ctx.Process(target=observer_window, args=(updates, commands, args.observer_display, args.fullscreen))
     output = Path(args.output)
     output.mkdir(parents=True, exist_ok=True)
     filename = output / (datetime.now(timezone.utc).strftime("session_%Y%m%dT%H%M%S_%fZ") + ".csv")
-    fields = ["trial", "condition", "word", "ink", "expected", "response", "correct", "response_ms", "answered_utc", "seed", "timed_out", "response_limit_seconds"]
+    fields = ["trial", "condition", "word", "ink", "expected", "response", "correct", "response_ms", "answered_utc", "seed", "session", "timed_out", "response_limit_seconds"]
     clock = pg.time.Clock()
+    session_number = 1
     correct_until = 0
     connected = False
     running = True
@@ -331,10 +368,10 @@ def run(args):
                 nonlocal correct_until
                 if row is None:
                     return
-                writer.writerow({**row, "seed": args.seed})
+                writer.writerow({**row, "seed": args.seed, "session": session_number})
                 log.flush()
                 if row["correct"]:
-                    correct_until = time.perf_counter() + .25
+                    correct_until = time.perf_counter() + .6
                 elif beep:
                     beep.play()
                 publish()
@@ -351,6 +388,14 @@ def run(args):
                         if isinstance(command, dict) and "response_limit_seconds" in command:
                             session.set_response_limit(command["response_limit_seconds"])
                             publish()
+                        elif isinstance(command, dict) and "grade" in command:
+                            save_response(session.grade(command["grade"], time.perf_counter(), command["trial"]))
+                        elif command == "restart" and session.phase == "done":
+                            args.seed = random.SystemRandom().randrange(2**32)
+                            session.restart(args.seed)
+                            session_number += 1
+                            correct_until = 0
+                            publish()
                         elif command == "connected":
                             connected = True
                         elif command == "stop":
@@ -365,28 +410,14 @@ def run(args):
                 if not running:
                     break
                 w, h = screen.get_size()
-                columns = 4
-                rows = math.ceil(len(COLORS) / columns)
-                cell_width = (w - 60) // columns
-                buttons = [pg.Rect(30 + (i % columns) * cell_width,
-                                   h - 70 - rows * 76 + (i // columns) * 76,
-                                   cell_width - 12, 64) for i in range(len(COLORS))]
                 for event in pg.event.get():
-                    response = None
                     if event.type == pg.QUIT or (event.type == pg.KEYDOWN and event.key == pg.K_ESCAPE):
                         running = False
                         break
-                    if event.type == pg.KEYDOWN and not getattr(event, "repeat", False):
-                        if event.key == pg.K_SPACE and connected and session.phase in ("ready", "error"):
-                            session.advance()
-                            publish()
-                        else:
-                            response = key_map.get(event.key)
-                    elif event.type == pg.MOUSEBUTTONDOWN and event.button == 1:
-                        response = next((c for c, rect in zip(COLORS, buttons) if rect.collidepoint(event.pos)), None)
-                    if response:
-                        row = session.respond(response, time.perf_counter())
-                        save_response(row)
+                    elif event.type == pg.KEYDOWN and event.key == pg.K_F11 and not getattr(event, "repeat", False):
+                        fullscreen = not fullscreen
+                        screen = open_window(pg, "test1 | Participant", args.participant_display, fullscreen)
+                w, h = screen.get_size()
                 if session.phase == "correct" and time.perf_counter() >= correct_until:
                     session.advance()
                     publish()
@@ -400,16 +431,17 @@ def run(args):
                           22, 28, TEXT, center=False, x=w - 120)
                 if session.phase == "active":
                     trial = session.trial
-                    draw_text(pg, screen, "Choose the INK COLOR" if trial.condition == "INK" else "Choose the color NAMED BY THE WORD", 122, 30)
+                    draw_text(pg, screen, "Say the INK COLOR aloud" if trial.condition == "INK" else "Say the color NAMED BY THE WORD aloud", 122, 30)
                     draw_text(pg, screen, "Ignore what the word says." if trial.condition == "INK" else "The word and ink color match.", 167, 23, MUTED)
                     draw_text(pg, screen, trial.word, h // 2 - 25, 90, COLORS[trial.ink])
-                    for i, (color, rect) in enumerate(zip(COLORS, buttons), 1):
-                        button(pg, screen, rect, f"{i}  {color}")
-                elif session.phase != "correct":
+                else:
                     messages = {"ready": "Wait for the observer to start.",
-                                "error": "Paused - wait for the observer.", "done": "Session complete. Thank you."}
-                    draw_text(pg, screen, messages[session.phase], h // 2, 32)
-                draw_text(pg, screen, f"Click an answer or press 1-{len(COLORS)}   |   Esc to end", h - 35, 19, MUTED)
+                                "correct": "Correct",
+                                "error": "Incorrect - wait for the observer.",
+                                "done": "Session complete. Thank you."}
+                    accent = COLORS["RED"] if session.phase == "error" else COLORS["GREEN"] if session.phase == "correct" else TEXT
+                    draw_text(pg, screen, messages[session.phase], h // 2, 32, accent)
+                draw_text(pg, screen, "Respond aloud. The observer records your answer.", h - 35, 19, MUTED)
                 pg.display.flip()
                 if session.phase == "active" and session.onset is None:
                     # Begin timing only after the first frame containing the stimulus.
@@ -432,7 +464,7 @@ def main():
     parser.add_argument("--seed", type=int, help="Seed for repeatable trial order")
     parser.add_argument("--participant-display", type=int, default=0)
     parser.add_argument("--observer-display", type=int, default=0)
-    parser.add_argument("--fullscreen", action="store_true", help="Participant fullscreen (use separate displays)")
+    parser.add_argument("--fullscreen", action="store_true", help="Both windows fullscreen (use separate displays)")
     parser.add_argument("--output", default="results", help="Local CSV directory")
     args = parser.parse_args()
     if args.trials < 1:

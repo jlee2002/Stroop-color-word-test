@@ -11,7 +11,7 @@ import unittest
 from unittest.mock import patch
 
 
-def scripted_observer(updates, commands, display):
+def scripted_observer(updates, commands, display, fullscreen=False):
     commands.put("connected")
     commands.put("resume")
     while True:
@@ -23,7 +23,7 @@ def scripted_observer(updates, commands, display):
             return
 
 
-def timeout_observer(updates, commands, display):
+def timeout_observer(updates, commands, display, fullscreen=False):
     commands.put("connected")
     commands.put({"response_limit_seconds": .03})
     commands.put("resume")
@@ -33,6 +33,33 @@ def timeout_observer(updates, commands, display):
             commands.put("resume")
         elif state["phase"] in ("done", "closed"):
             commands.put("stop")
+            return
+
+
+def grading_observer(updates, commands, display, fullscreen=False):
+    commands.put("connected")
+    commands.put("resume")
+    restarted = False
+    awaiting_ready = False
+    while True:
+        state = updates.get(timeout=10)
+        if state["phase"] == "active":
+            commands.put({"grade": restarted, "trial": state["index"]})
+        elif state["phase"] == "error":
+            commands.put("resume")
+        elif state["phase"] == "done":
+            if awaiting_ready:
+                continue
+            if restarted:
+                commands.put("stop")
+                return
+            restarted = True
+            awaiting_ready = True
+            commands.put("restart")
+        elif state["phase"] == "ready" and restarted:
+            awaiting_ready = False
+            commands.put("resume")
+        elif state["phase"] == "closed":
             return
 
 
@@ -81,41 +108,20 @@ class RuntimeTests(unittest.TestCase):
                 with next(Path(folder).glob("*.csv")).open(newline="", encoding="utf-8") as log:
                     self.assertEqual(list(csv.DictReader(log)), [])
 
-    def test_space_resumes_error_from_participant_window_and_saves_csv(self):
+    def test_observer_grades_and_restarts_with_shuffle(self):
         with patch.dict(os.environ, {"SDL_VIDEODRIVER": "dummy", "SDL_AUDIODRIVER": "dummy"}):
-            import pygame as pg
             import stroop
-            finished = threading.Event()
-
-            def answer():
-                press_space = False
-                while not finished.wait(.1):
-                    if pg.display.get_init():
-                        try:
-                            pg.event.post(pg.event.Event(pg.KEYDOWN, key=pg.K_SPACE if press_space else pg.K_8))
-                            press_space = not press_space
-                        except pg.error:
-                            pass
-
-            worker = threading.Thread(target=answer, daemon=True)
             with tempfile.TemporaryDirectory() as folder:
                 args = SimpleNamespace(participant_display=0, observer_display=0,
                                        fullscreen=False, trials=1, seed=123, output=folder, duration=None)
-                worker.start()
-                try:
-                    with patch.object(stroop, "observer_window", scripted_observer):
-                        stroop.run(args)
-                finally:
-                    finished.set()
-                    worker.join(timeout=2)
-                files = list(Path(folder).glob("*.csv"))
-                self.assertEqual(len(files), 1)
-                with files[0].open(newline="", encoding="utf-8") as log:
+                with patch.object(stroop, "observer_window", grading_observer):
+                    stroop.run(args)
+                with next(Path(folder).glob("*.csv")).open(newline="", encoding="utf-8") as log:
                     rows = list(csv.DictReader(log))
-                self.assertEqual(len(rows), 1)
-                self.assertEqual(rows[0]["response"], "WHITE")
-                self.assertEqual(rows[0]["correct"], "False")
-                self.assertGreaterEqual(float(rows[0]["response_ms"]), 0)
+                self.assertEqual(len(rows), 2)
+                self.assertEqual([r["session"] for r in rows], ["1", "2"])
+                self.assertEqual([r["correct"] for r in rows], ["False", "True"])
+                self.assertNotEqual(rows[0]["seed"], rows[1]["seed"])
 
     def test_observer_render_and_close(self):
         from queue import Queue

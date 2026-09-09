@@ -4,6 +4,27 @@ from stroop import COLORS, Session, make_trials, timer_text, parse_response_limi
 
 
 class SessionTests(unittest.TestCase):
+    def test_verbal_scoring_two_second_deadline_and_restart(self):
+        session = Session(make_trials(2, 1))
+        session.set_response_limit("2")
+        session.advance()
+        session.onset = 100
+        self.assertIsNone(session.grade(True, 101, 99))
+        self.assertIsNone(session.check_timeout(101.999))
+        row = session.grade(True, 102, 1)
+        self.assertTrue(row["timed_out"])
+        self.assertEqual(session.phase, "error")
+        self.assertIsNone(session.grade(True, 103, 1))
+        session.advance()
+        session.onset = 104
+        self.assertTrue(session.grade(True, 105, 2)["correct"])
+        session.advance()
+        self.assertTrue(session.restart(999))
+        self.assertEqual(session.phase, "ready")
+        self.assertEqual(session.rows, [])
+        self.assertEqual(session.response_limit_seconds, 2)
+        self.assertEqual(session.trials, make_trials(2, 999))
+
     def test_timeout_counts_once_and_resets_after_resume(self):
         session = Session(make_trials(2, 1))
         session.set_response_limit("2.5")
