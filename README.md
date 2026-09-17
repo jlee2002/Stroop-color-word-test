@@ -6,12 +6,16 @@ The repository's original [experiment overview](docs/experiment-overview.md) des
 
 ## Trial rules
 
-- **INK:** a color word is printed in a different color. Choose the ink color, ignoring the word.
-- **WORD:** the word and ink color match. Choose the color named by the word.
+All instruction and introduction pages use the default background; only white-word examples use black. After the examples, a **Ready for the test?** page offers **I'm ready - notify observer**. Clicking it updates the observer console to show that the participant is ready. The timer remains stopped until the observer starts the test.
+
+Before each session, the participant acknowledges the instructions and clicks **Next** through four guided examples: BLUE and RED in white on black, RED in blue, and GREEN in green. An introduction page before each pair explains what the next two examples will show and which rule to follow. Each example shows its answer. **Previous** returns to the preceding example or instruction page. Instructions and examples are untimed and are not scored or logged as test responses. Only after all four examples can the observer start the test timer. Restarting a session repeats these pages.
+
+- **Say the INK COLOR aloud:** choose the ink color, whether the word and ink match or differ. Both use the same instruction. White ink is excluded from these trials.
+- **Say the color NAMED BY THE WORD aloud:** for white words on a black background, read the word aloud (for example, white “BLUE” means answer “blue”).
 
 The session lasts **two minutes**, starting when the observer presses Space or Start. Both windows show the same countdown from **02:00** to **00:00**. The clock continues during error pauses and between trials. At zero, the task ends automatically and no further answers are accepted.
 
-The conditions are shuffled in batches of 40, with equal counts (one extra INK trial when a batch has an odd size). New batches are generated as needed until time expires; 40 is not a session limit. The number of completed trials and the condition counts depend on response speed and pauses. Consecutive trials may use the same condition. Colors are sampled independently; color frequencies are not counterbalanced. Each trial shows its instruction. This implements the two conditions described above, not a full factorial Stroop protocol.
+There are two participant instructions. For results logging, trials retain three stimulus labels: INK (mismatching word and ink), WORD (matching word and ink; still answer the ink color), and WHITE_WORD (white word on black; read the word). Batches of 40 contain 14 INK, 13 WORD, and 13 WHITE_WORD trials, shuffled together. Other batch sizes are split as evenly as possible, with remainder trials assigned to INK, then WORD. New batches are generated as needed until time expires; 40 is not a session limit. The number of completed trials depends on response speed and pauses. Consecutive trials may use the same instruction. Colors are sampled independently; color frequencies are not counterbalanced. Each trial shows its instruction.
 
 Participants respond **aloud**; their screen has no answer buttons or scoring shortcuts. The observer sees the current expected answer and clicks **Correct** or **Incorrect**, or presses **Right arrow = Correct** / **Left arrow = Incorrect** with the observer window focused. Correct answers show green **Correct** feedback for 600 ms before advancing. Incorrect answers and timeouts show **Incorrect**, beep, and pause trial progression until the observer presses **Space** with the observer window focused. The failed trial is recorded once; Space moves to the next trial. The overall session countdown continues during pauses.
 

@@ -1,6 +1,6 @@
 import unittest
 
-from stroop import COLORS, Session, make_trials, timer_text, parse_response_limit
+from stroop import COLORS, Trial, Session, make_trials, timer_text, parse_response_limit
 
 
 class SessionTests(unittest.TestCase):
@@ -99,10 +99,30 @@ class SessionTests(unittest.TestCase):
     def test_conditions_and_reproducible_order(self):
         trials = make_trials(40, 17)
         self.assertEqual(trials, make_trials(40, 17))
-        self.assertEqual(sum(t.condition == "INK" for t in trials), 20)
+        self.assertEqual(sum(t.condition == "INK" for t in trials), 14)
+        self.assertEqual(sum(t.condition == "WORD" for t in trials), 13)
+        self.assertEqual(sum(t.condition == "WHITE_WORD" for t in trials), 13)
         for trial in trials:
-            self.assertEqual(trial.word == trial.ink, trial.condition == "WORD")
-            self.assertEqual(trial.answer, trial.ink)
+            if trial.condition == "WHITE_WORD":
+                self.assertEqual(trial.ink, "WHITE")
+                self.assertEqual(trial.answer, trial.word)
+            else:
+                self.assertNotEqual(trial.ink, "WHITE")
+                self.assertEqual(trial.word == trial.ink, trial.condition == "WORD")
+                self.assertEqual(trial.answer, trial.ink)
+
+    def test_white_word_scores_and_logs_word_instead_of_ink(self):
+        for response, correct in (("BLUE", True), ("WHITE", False)):
+            with self.subTest(response=response):
+                session = Session([Trial("WHITE_WORD", "BLUE", "WHITE")])
+                session.advance()
+                session.onset = 10
+                self.assertEqual(session.snapshot()["expected"], "BLUE")
+                row = session.respond(response, 11)
+                self.assertEqual(row["correct"], correct)
+                self.assertEqual(row["expected"], "BLUE")
+                self.assertEqual(row["ink"], "WHITE")
+                self.assertEqual(row["condition"], "WHITE_WORD")
 
     def test_error_requires_resume_and_cannot_accept_duplicate(self):
         session = Session(make_trials(2, 1))

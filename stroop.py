@@ -21,6 +21,8 @@ BG = (16, 22, 34)
 PANEL = (29, 39, 56)
 TEXT = (235, 241, 250)
 MUTED = (157, 175, 199)
+PRACTICE = (("BLUE", "WHITE"), ("RED", "WHITE"),
+            ("RED", "BLUE"), ("GREEN", "GREEN"))
 
 
 @dataclass(frozen=True)
@@ -31,18 +33,20 @@ class Trial:
 
     @property
     def answer(self):
-        return self.ink if self.condition == "INK" else self.word
+        return self.word if self.condition == "WHITE_WORD" else self.ink
 
 
 def make_trials(count, seed=None):
-    """Equal conditions (one extra INK for odd counts), shuffled together."""
+    """Balance three conditions, then shuffle (remainder: INK, WORD)."""
     rng = random.Random(seed)
     trials = []
     names = list(COLORS)
+    ink_names = [c for c in names if c != "WHITE"]
     for i in range(count):
-        condition = "INK" if i % 2 == 0 else "WORD"
-        word = rng.choice(names)
-        ink = rng.choice([c for c in names if c != word]) if condition == "INK" else word
+        condition = ("INK", "WORD", "WHITE_WORD")[i % 3]
+        word = rng.choice(ink_names if condition == "WORD" else names)
+        ink = (rng.choice([c for c in ink_names if c != word]) if condition == "INK"
+               else "WHITE" if condition == "WHITE_WORD" else word)
         trials.append(Trial(condition, word, ink))
     rng.shuffle(trials)
     return trials
@@ -249,7 +253,7 @@ def observer_window(updates, commands, display, fullscreen=False):
             apply_rect = pg.Rect(406, h - 265, 120, 44)
             right = pg.Rect(w // 2 + 8, 285, (w - 88) // 2, 54)
             wrong = pg.Rect(36, 285, (w - 88) // 2, 54)
-            can_edit = state["phase"] == "ready"
+            can_edit = state["phase"] in ("ready", "practice")
             if not can_edit:
                 editing_limit = False
             for event in pg.event.get():
@@ -296,7 +300,8 @@ def observer_window(updates, commands, display, fullscreen=False):
             draw_text(pg, screen, timer_text(state.get("deadline"), state.get("duration_seconds", 120)),
                       22, 28, TEXT, center=False, x=w - 120)
             phase = state["phase"]
-            titles = {"connecting": "Connecting...", "ready": "Ready to begin",
+            titles = {"connecting": "Connecting...", "ready": "Participant is ready - start when ready",
+                      "practice": "Participant reviewing instructions / examples",
                       "active": "Participant responding", "correct": "Correct",
                       "error": "Incorrect - task paused", "done": "Session complete"}
             accent = COLORS["RED"] if phase == "error" else COLORS["GREEN"] if phase in ("correct", "done") else TEXT
@@ -336,6 +341,61 @@ def observer_window(updates, commands, display, fullscreen=False):
         pg.quit()
 
 
+def draw_practice(pg, screen, step):
+    w, h = screen.get_size()
+    example_index = {2: 0, 3: 1, 5: 2, 6: 3}.get(step)
+    screen.fill((0, 0, 0) if step in (2, 3) else BG)
+    title = ("Before you begin" if step == 0 else
+             "White words on a black background" if step == 1 else
+             "Say the ink color" if step == 4 else
+             "Ready for the test?" if step == 7 else
+             f"Practice example {example_index + 1} of 4")
+    draw_text(pg, screen, title, 45, 30)
+    if step == 0:
+        lines = ["1. White words on a black background:",
+                 "Say the color named by the word. White BLUE means say blue.",
+                 "2. Words printed in any other color:",
+                 "Say the ink color, ignoring what the word says.",
+                 "RED printed in blue means say blue; RED in red means say red.",
+                 "3. Respond aloud as quickly and accurately as possible.",
+                 "If an answer time limit is set, taking too long counts as incorrect.",
+                 "You will see two examples of each rule before the test."]
+        for i, line in enumerate(lines):
+            draw_text(pg, screen, line, 110 + i * ((h - 290) / 8), 22)
+    elif step == 7:
+        draw_text(pg, screen, "You have finished the practice examples.", h // 2 - 80, 26)
+        draw_text(pg, screen, "Click below to let the observer know you're ready.", h // 2 - 30, 25)
+        draw_text(pg, screen, "The test will begin when the observer starts it.", h // 2 + 20, 25)
+    elif step in (1, 4):
+        lines = (["The next two pages will show examples of white words",
+                  "on a black background.",
+                  "Say the color named by the word, ignoring the white ink."] if step == 1 else
+                 ["The next two pages will show examples of colored words.",
+                  "Say the ink color, ignoring what the word says.",
+                  "The word and ink color may match or differ."])
+        for i, line in enumerate(lines):
+            draw_text(pg, screen, line, h // 2 - 75 + i * 45, 25)
+        draw_text(pg, screen, "Each example will also show the correct answer.", h // 2 + 95, 23, MUTED)
+    else:
+        word, ink = PRACTICE[example_index]
+        white_word = step <= 3
+        draw_text(pg, screen, "These examples use white words on a black background." if white_word
+                  else "These examples use colored words.", 120, 25)
+        draw_text(pg, screen, "Say the color named by the word." if white_word
+                  else "Say the ink color, ignoring what the word says.", 165, 25)
+        draw_text(pg, screen, word, h // 2, 90, COLORS[ink])
+        draw_text(pg, screen, f"The answer is {(word if white_word else ink).lower()}.", h // 2 + 85, 30)
+    if step == 0:
+        button(pg, screen, pg.Rect(w // 2 - 220, h - 110, 440, 54), "I understand - begin practice")
+    elif step == 7:
+        button(pg, screen, pg.Rect(w // 2 - 105, h - 180, 210, 54), "Previous")
+        button(pg, screen, pg.Rect(w // 2 - 220, h - 110, 440, 54), "I'm ready - notify observer")
+    else:
+        button(pg, screen, pg.Rect(w // 2 - 220, h - 110, 210, 54), "Previous")
+        button(pg, screen, pg.Rect(w // 2 + 10, h - 110, 210, 54), "Next")
+    draw_text(pg, screen, "The test timer is stopped during instructions and practice.", h - 30, 19, MUTED)
+
+
 def run(args):
     import pygame as pg
     fullscreen = args.fullscreen
@@ -356,8 +416,10 @@ def run(args):
     connected = False
     running = True
     last_update = 0
+    practice_step = 0  # Instructions, introductions, examples, readiness confirmation.
     def publish():
-        updates.put({**session.snapshot(), "audio": audio})
+        updates.put({**session.snapshot(), "audio": audio,
+                     "phase": "practice" if practice_step < 8 else session.phase})
     observer.start()
     try:
         with filename.open("x", newline="", encoding="utf-8") as log:
@@ -393,6 +455,7 @@ def run(args):
                         elif command == "restart" and session.phase == "done":
                             args.seed = random.SystemRandom().randrange(2**32)
                             session.restart(args.seed)
+                            practice_step = 0
                             session_number += 1
                             correct_until = 0
                             publish()
@@ -402,7 +465,7 @@ def run(args):
                             running = False
                         elif command == "beep" and beep:
                             beep.play()
-                        elif command == "resume" and connected and session.phase in ("ready", "error"):
+                        elif command == "resume" and connected and practice_step == 8 and session.phase in ("ready", "error"):
                             session.advance()
                             publish()
                 except Empty:
@@ -410,6 +473,10 @@ def run(args):
                 if not running:
                     break
                 w, h = screen.get_size()
+                next_rect = (pg.Rect(w // 2 - 220, h - 110, 440, 54) if practice_step in (0, 7)
+                             else pg.Rect(w // 2 + 10, h - 110, 210, 54))
+                previous_rect = (pg.Rect(w // 2 - 105, h - 180, 210, 54) if practice_step == 7
+                                 else pg.Rect(w // 2 - 220, h - 110, 210, 54))
                 for event in pg.event.get():
                     if event.type == pg.QUIT or (event.type == pg.KEYDOWN and event.key == pg.K_ESCAPE):
                         running = False
@@ -417,6 +484,14 @@ def run(args):
                     elif event.type == pg.KEYDOWN and event.key == pg.K_F11 and not getattr(event, "repeat", False):
                         fullscreen = not fullscreen
                         screen = open_window(pg, "test1 | Participant", args.participant_display, fullscreen)
+                    elif (practice_step < 8 and event.type == pg.MOUSEBUTTONDOWN
+                          and event.button == 1):
+                        if next_rect.collidepoint(event.pos):
+                            practice_step += 1
+                        elif practice_step > 0 and previous_rect.collidepoint(event.pos):
+                            practice_step -= 1
+                        publish()
+                        break
                 w, h = screen.get_size()
                 if session.phase == "correct" and time.perf_counter() >= correct_until:
                     session.advance()
@@ -425,17 +500,23 @@ def run(args):
                 if time.perf_counter() - last_update >= .1:
                     publish()
                     last_update = time.perf_counter()
-                screen.fill(BG)
+                if practice_step < 8:
+                    draw_practice(pg, screen, practice_step)
+                    pg.display.flip()
+                    clock.tick(60)
+                    continue
+                screen.fill((0, 0, 0) if session.phase == "active" and session.trial.condition == "WHITE_WORD" else BG)
                 draw_text(pg, screen, "test1", 45, 22, MUTED)
                 draw_text(pg, screen, timer_text(session.deadline, session.duration_seconds),
                           22, 28, TEXT, center=False, x=w - 120)
                 if session.phase == "active":
                     trial = session.trial
-                    draw_text(pg, screen, "Say the INK COLOR aloud" if trial.condition == "INK" else "Say the color NAMED BY THE WORD aloud", 122, 30)
-                    draw_text(pg, screen, "Ignore what the word says." if trial.condition == "INK" else "The word and ink color match.", 167, 23, MUTED)
+                    read_word = trial.condition == "WHITE_WORD"
+                    draw_text(pg, screen, "Say the color NAMED BY THE WORD aloud" if read_word else "Say the INK COLOR aloud", 122, 30)
+                    draw_text(pg, screen, "Read the word. Ignore the white ink." if read_word else "Ignore what the word says.", 167, 23, MUTED)
                     draw_text(pg, screen, trial.word, h // 2 - 25, 90, COLORS[trial.ink])
                 else:
-                    messages = {"ready": "Wait for the observer to start.",
+                    messages = {"ready": "Observer notified. Please wait for the test to start.",
                                 "correct": "Correct",
                                 "error": "Incorrect - wait for the observer.",
                                 "done": "Session complete. Thank you."}
