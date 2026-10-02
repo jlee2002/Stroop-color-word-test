@@ -4,6 +4,11 @@ A Python + Pygame experiment prototype with separate participant and observer wi
 
 The repository's original [experiment overview](docs/experiment-overview.md) describes the Snowball Lab study context.
 
+## Stroop test materials
+
+- [Stroop_Participant_100_Trials — participant slides](https://docs.google.com/presentation/d/14fLXZgbyfLOqoX1EnY-LwkOno97Hn1QWiR2ZEnl6kRc/edit?usp=sharing)
+- [Stroop Experimenter Answer Sheet (PDF)](docs/Stroop_Experimenter_Answer_Sheet.pdf)
+
 ## Trial rules
 
 All instruction and introduction pages use the default background; only white-word examples use black. After the examples, a **Ready for the test?** page offers **I'm ready - notify observer**. Clicking it updates the observer console to show that the participant is ready. The timer remains stopped until the observer starts the test.
